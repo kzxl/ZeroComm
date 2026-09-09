@@ -36,6 +36,33 @@ namespace ZeroComm.Core.Buffers
         }
 
         /// <summary>
+        /// Attempts to extract a complete Mitsubishi MELSEC MC Protocol 3E Binary response frame.
+        /// Inspects the subheader (0xD0, 0x00) and 2-byte response data length field (offset 7).
+        /// </summary>
+        public static bool TryExtractMcProtocolFrame(CircularRingBuffer ring, out byte[] frame)
+        {
+            frame = Array.Empty<byte>();
+            if (ring == null || ring.Count < 9)
+                return false;
+
+            // Validate subheader (0xD0, 0x00)
+            if (ring.PeekByte(0) != 0xD0 || ring.PeekByte(1) != 0x00)
+                return false;
+
+            byte lenLow = ring.PeekByte(7);
+            byte lenHigh = ring.PeekByte(8);
+            ushort dataLength = (ushort)(lenLow | (lenHigh << 8));
+            int totalExpectedBytes = 9 + dataLength;
+
+            if (ring.Count < totalExpectedBytes)
+                return false;
+
+            frame = new byte[totalExpectedBytes];
+            ring.Read(frame, 0, totalExpectedBytes);
+            return true;
+        }
+
+        /// <summary>
         /// Attempts to extract a frame of exact fixed length.
         /// </summary>
         public static bool TryExtractFixedLengthFrame(CircularRingBuffer ring, int frameLength, out byte[] frame)
