@@ -63,6 +63,65 @@ namespace ZeroComm.Core.Buffers
         }
 
         /// <summary>
+        /// Attempts to extract a complete Modbus RTU response frame from the ring buffer.
+        /// Inspects function code, byte count, and verifies CRC16 before extraction.
+        /// </summary>
+        public static bool TryExtractModbusRtuFrame(CircularRingBuffer ring, out byte[] frame)
+        {
+            frame = Array.Empty<byte>();
+            if (ring == null || ring.Count < 5)
+                return false;
+
+            byte fc = ring.PeekByte(1);
+            int expectedLen = 0;
+
+            if ((fc & 0x80) != 0)
+            {
+                // Exception response: UnitId(1) + FC(1) + ExcCode(1) + CRC(2) = 5
+                expectedLen = 5;
+            }
+            else if (fc == 0x01 || fc == 0x02 || fc == 0x03 || fc == 0x04)
+            {
+                // Read response: UnitId(1) + FC(1) + ByteCount(1) + Bytes(N) + CRC(2) = 5 + ByteCount
+                if (ring.Count < 3) return false;
+                byte byteCount = ring.PeekByte(2);
+                expectedLen = 5 + byteCount;
+            }
+            else if (fc == 0x05 || fc == 0x06 || fc == 0x0F || fc == 0x10)
+            {
+                // Write response: UnitId(1) + FC(1) + Addr(2) + Value/Qty(2) + CRC(2) = 8
+                expectedLen = 8;
+            }
+            else
+            {
+                // Unknown function code: not aligned to frame start, advance 1 byte
+                ring.Advance(1);
+                return false;
+            }
+
+            if (ring.Count < expectedLen)
+                return false; // Waiting for remaining frame bytes
+
+            var candidate = new byte[expectedLen];
+            // Read candidate without consuming to check CRC
+            for (int i = 0; i < expectedLen; i++) candidate[i] = ring.PeekByte(i);
+
+            if (ModbusRtuFrame.ValidateCrc(candidate, 0, expectedLen))
+            {
+                // CRC valid! Consume frame from ring
+                frame = new byte[expectedLen];
+                ring.Read(frame, 0, expectedLen);
+                return true;
+            }
+            else
+            {
+                // CRC failed: false header alignment, skip 1 byte
+                ring.Advance(1);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Attempts to extract a frame of exact fixed length.
         /// </summary>
         public static bool TryExtractFixedLengthFrame(CircularRingBuffer ring, int frameLength, out byte[] frame)
