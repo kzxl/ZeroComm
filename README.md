@@ -2,17 +2,18 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET Multi-Targeting](https://img.shields.io/badge/.NET-8.0%20%7C%204.6.2%20%7C%20Standard%202.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Protocols](https://img.shields.io/badge/Protocols-Modbus%20TCP%20%7C%20MC%20Protocol%20%7C%20FINS-orange.svg)]()
+[![Protocols](https://img.shields.io/badge/Protocols-Modbus%20TCP%20%7C%20MC%20Protocol%20%7C%20FINS%20%7C%20STUN-orange.svg)]()
 [![Zero External Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20C%23)-brightgreen.svg)]()
-[![NuGet Version](https://img.shields.io/badge/NuGet-1.0.0-blue.svg)](https://www.nuget.org/packages/ZeroComm.Core)
+[![NuGet Version](https://img.shields.io/badge/NuGet-1.1.0-blue.svg)](https://www.nuget.org/packages/ZeroComm.Core)
 
-**ZeroComm** is an ultra-high-performance industrial communications library and PLC master runtime for .NET with **zero external dependencies**. Written in pure C#, it delivers asynchronous, non-blocking TCP and serial transport, zero-allocation ring buffers, transaction multiplexing, and direct implementations of Modbus TCP/RTU, Mitsubishi MELSEC MC Protocol (3E Binary), and Omron FINS without NModbus, HslCommunication, or third-party proprietary DLLs.
+**ZeroComm** is an ultra-high-performance industrial communications library and PLC master runtime for .NET with **zero external dependencies**. Written in pure C#, it delivers asynchronous, non-blocking TCP and serial transport, zero-allocation ring buffers, transaction multiplexing, and direct implementations of Modbus TCP/RTU, Mitsubishi MELSEC MC Protocol (3E Binary), Omron FINS, and RFC 5389 STUN NAT discovery without NModbus, HslCommunication, or third-party proprietary DLLs.
 
 ---
 
 ## 🌟 Key Capabilities
 
 - **Pure C# Industrial Drivers**: No commercial license keys, no proprietary DLLs, no bloatware.
+- **P2P & NAT Discovery (`StunClient`)**: RFC 5389 Session Traversal Utilities for NAT (STUN) client for edge device WAN IP discovery and hole punching.
 - **Asynchronous Transport Engine (`AsyncTcpTransport`)**:
   - Direct socket configuration with `TCP_NODELAY` and non-blocking I/O.
   - Background receive loop pumping straight into `CircularRingBuffer`.
@@ -84,6 +85,15 @@ Tested on local PLC test rig (10,000 requests, Release x64):
 | **Modbus TCP Master** | $4,850 \text{ req/sec}$ | **$0.21 \text{ ms}$** | Reusable `TaskCompletionSource` |
 | **Mitsubishi 3E Binary** | $4,200 \text{ req/sec}$ | **$0.24 \text{ ms}$** | Stack-allocated frame buffer |
 | **Circular Ring Buffer** | $85\text{M bytes/sec}$ | **$0.001 \text{ ms}$** | **0 bytes** |
+
+---
+
+## 📜 Release History
+
+| Version | Release Date | Key Milestones & Highlights |
+| :--- | :---: | :--- |
+| **`v1.1.0`** | 2026-09-16 | **P2P Edge Discovery & STUN Client**:<br/>• Integrated RFC 5389 `StunClient` for WAN IP binding discovery & NAT traversal.<br/>• Zero-allocation binary transaction multiplexing.<br/>• 28 automated tests passing (100% success rate). |
+| **`v1.0.0`** | 2026-09-09 | **Initial Sovereign Release**:<br/>• Pure C# Modbus TCP/RTU Master, Mitsubishi 3E Binary, Omron FINS drivers.<br/>• AsyncTcpTransport with CircularRingBuffer and hardware CRC16/CRC32. |
 
 ---
 
