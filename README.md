@@ -2,11 +2,11 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET Multi-Targeting](https://img.shields.io/badge/.NET-8.0%20%7C%204.6.2%20%7C%20Standard%202.0-purple.svg)](https://dotnet.microsoft.com/)
-[![Protocols](https://img.shields.io/badge/Protocols-Modbus%20TCP%20%7C%20MC%20Protocol%20%7C%20FINS%20%7C%20STUN-orange.svg)]()
+[![Protocols](https://img.shields.io/badge/Protocols-Modbus%20TCP%20%7C%20MC%20Protocol%20%7C%20FINS%20%7C%20Siemens%20S7%20%7C%20STUN-orange.svg)]()
 [![Zero External Dependencies](https://img.shields.io/badge/Dependencies-0%20(Pure%20C%23)-brightgreen.svg)]()
-[![NuGet Version](https://img.shields.io/badge/NuGet-1.1.0-blue.svg)](https://www.nuget.org/packages/ZeroComm.Core)
+[![NuGet Version](https://img.shields.io/badge/NuGet-1.2.0-blue.svg)](https://www.nuget.org/packages/ZeroComm.Core)
 
-**ZeroComm** is an ultra-high-performance industrial communications library and PLC master runtime for .NET with **zero external dependencies**. Written in pure C#, it delivers asynchronous, non-blocking TCP and serial transport, zero-allocation ring buffers, transaction multiplexing, and direct implementations of Modbus TCP/RTU, Mitsubishi MELSEC MC Protocol (3E Binary), Omron FINS, and RFC 5389 STUN NAT discovery without NModbus, HslCommunication, or third-party proprietary DLLs.
+**ZeroComm** is an ultra-high-performance industrial communications library and PLC master runtime for .NET with **zero external dependencies**. Written in pure C#, it delivers asynchronous, non-blocking TCP and serial transport, zero-allocation ring buffers, transaction multiplexing, and direct implementations of Modbus TCP/RTU, Mitsubishi MELSEC MC Protocol (3E Binary), Omron FINS, Siemens S7 (ISO-on-TCP S7comm), and RFC 5389 STUN NAT discovery without NModbus, HslCommunication, or third-party proprietary DLLs.
 
 ---
 
@@ -19,6 +19,7 @@
   - Background receive loop pumping straight into `CircularRingBuffer`.
   - Automatic reconnection backoff strategy.
 - **Supported Industrial Protocols**:
+  - **Siemens S7 (ISO-on-TCP / RFC 1006 / S7comm)**: DB, Merkers (M), Inputs (I), Outputs (Q), Timers (T), Counters (C) with typed Big-Endian parsing for S7-300, S7-400, S7-1200, and S7-1500.
   - **Modbus TCP Master**: Read/Write Coils, Discrete Inputs, Holding Registers, Input Registers with transaction ID multiplexing.
   - **Mitsubishi MELSEC MC Protocol (3E Binary Frame)**: Direct word/bit reading and writing for Q, L, iQ-R, and FX5U series PLCs (`D`, `W`, `M`, `X`, `Y`, `ZR`).
   - **Omron FINS TCP**: Memory area reading and writing for CP, CJ, CS series PLCs.

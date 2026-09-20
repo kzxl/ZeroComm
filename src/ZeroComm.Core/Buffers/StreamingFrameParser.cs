@@ -63,6 +63,40 @@ namespace ZeroComm.Core.Buffers
         }
 
         /// <summary>
+        /// Attempts to extract a complete Siemens S7 (ISO-on-TCP / RFC 1006) frame from the ring buffer.
+        /// Inspects the 4-byte TPKT header (Version 0x03, Reserved 0x00, Length [2B big-endian]).
+        /// </summary>
+        public static bool TryExtractS7Frame(CircularRingBuffer ring, out byte[] frame)
+        {
+            frame = Array.Empty<byte>();
+            if (ring == null || ring.Count < 4)
+                return false;
+
+            // Check TPKT Version (0x03) and Reserved (0x00)
+            if (ring.PeekByte(0) != 0x03 || ring.PeekByte(1) != 0x00)
+            {
+                // Unaligned to TPKT header, advance 1 byte to seek synchronization
+                ring.Advance(1);
+                return false;
+            }
+
+            ushort totalLength = (ushort)((ring.PeekByte(2) << 8) | ring.PeekByte(3));
+            if (totalLength < 4)
+            {
+                // Invalid length, discard 1 byte
+                ring.Advance(1);
+                return false;
+            }
+
+            if (ring.Count < totalLength)
+                return false; // Still waiting for stream data
+
+            frame = new byte[totalLength];
+            ring.Read(frame, 0, totalLength);
+            return true;
+        }
+
+        /// <summary>
         /// Attempts to extract a complete Modbus RTU response frame from the ring buffer.
         /// Inspects function code, byte count, and verifies CRC16 before extraction.
         /// </summary>
