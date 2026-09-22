@@ -16,6 +16,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="ZeroPrimitives.Core" Version="1.3.0" />
+    <PackageReference Include="ZeroConcurrency" Version="1.2.0" />
+  </ItemGroup>
+
+  <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>ZeroComm.Tests</_Parameter1>
     </AssemblyAttribute>
