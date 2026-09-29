@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
+using ZeroComm.Core.Abstractions;
 using ZeroComm.Core.Buffers;
 using ZeroComm.Core.Siemens;
 using ZeroComm.Core.Transport;
@@ -17,6 +18,7 @@ namespace ZeroComm.Tests
             public bool IsConnected { get; set; } = true;
             public byte[]? LastSentBuffer { get; private set; }
             public event Action<byte[], int, int>? DataReceived;
+            public event Action? OnConnected;
 #pragma warning disable CS0067
             public event Action<Exception>? OnError;
 #pragma warning restore CS0067
@@ -27,6 +29,7 @@ namespace ZeroComm.Tests
             public Task ConnectAsync(CancellationToken cancellationToken = default)
             {
                 IsConnected = true;
+                OnConnected?.Invoke();
                 return Task.CompletedTask;
             }
 
@@ -52,6 +55,12 @@ namespace ZeroComm.Tests
                 }
 
                 return Task.CompletedTask;
+            }
+
+            public Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                byte[] arr = buffer.ToArray();
+                return SendAsync(arr, 0, arr.Length, cancellationToken);
             }
 
             public void SimulateIncomingData(byte[] data)
@@ -365,6 +374,98 @@ namespace ZeroComm.Tests
             Assert.Equal(packet2, frame2);
 
             Assert.Equal(0, ring.Count);
+        }
+
+        [Fact]
+        public async Task S7TcpClient_AsIndustrialPlcClient_ReadAsync_Success()
+        {
+            var mock = new MockS7Transport();
+
+            mock.AutoResponder = request =>
+            {
+                // 1. Connection Request
+                if (request.Length == 22 && request[5] == 0xE0)
+                {
+                    return new byte[]
+                    {
+                        0x03, 0x00, 0x00, 0x16,
+                        0x11, 0xD0, 0x00, 0x01, 0x00, 0x02, 0x00,
+                        0xC0, 0x01, 0x0A, 0xC1, 0x02, 0x01, 0x00, 0xC2, 0x02, 0x01, 0x02
+                    };
+                }
+
+                // 2. Setup Comm
+                if (request.Length >= 25 && request[17] == 0xF0)
+                {
+                    ushort seq = (ushort)((request[11] << 8) | request[12]);
+                    return new byte[]
+                    {
+                        0x03, 0x00, 0x00, 0x1B,
+                        0x02, 0xF0, 0x80,
+                        0x32, 0x03, 0x00, 0x00,
+                        (byte)(seq >> 8), (byte)(seq & 0xFF),
+                        0x00, 0x08, 0x00, 0x00,
+                        0x00, 0x00,
+                        0xF0, 0x00, 0x00, 0x01, 0x00, 0x01,
+                        0x01, 0xE0
+                    };
+                }
+
+                // 3. Read Var (byte 17 == 0x04)
+                if (request.Length >= 21 && request[17] == 0x04)
+                {
+                    ushort seq = (ushort)((request[11] << 8) | request[12]);
+                    return new byte[]
+                    {
+                        0x03, 0x00, 0x00, 0x1D,
+                        0x02, 0xF0, 0x80,
+                        0x32, 0x03, 0x00, 0x00,
+                        (byte)(seq >> 8), (byte)(seq & 0xFF),
+                        0x00, 0x02, 0x00, 0x08,
+                        0x00, 0x00,
+                        0x04, 0x01,
+                        0xFF, 0x04, 0x00, 0x20,
+                        0x00, 0x01, 0x86, 0xA0 // 100,000 in Big-Endian Int32
+                    };
+                }
+
+                // 4. Write Var (byte 17 == 0x05)
+                if (request.Length >= 21 && request[17] == 0x05)
+                {
+                    ushort seq = (ushort)((request[11] << 8) | request[12]);
+                    return new byte[]
+                    {
+                        0x03, 0x00, 0x00, 0x16,
+                        0x02, 0xF0, 0x80,
+                        0x32, 0x03, 0x00, 0x00,
+                        (byte)(seq >> 8), (byte)(seq & 0xFF),
+                        0x00, 0x02, 0x00, 0x01,
+                        0x00, 0x00,
+                        0x05, 0x01,
+                        0xFF
+                    };
+                }
+
+                return null;
+            };
+
+            using var s7Client = new S7TcpClient(mock);
+            IIndustrialPlcClient client = s7Client;
+            await client.ConnectAsync();
+
+            Assert.Equal(PlcVendor.SiemensS7, client.Vendor);
+            Assert.Equal(PlcConnectionState.Connected, client.State);
+
+            // Read tag using unified string syntax: DB1.DBD0
+            int intVal = await client.ReadAsync<int>("DB1.DBD0");
+            Assert.Equal(100000, intVal);
+
+            // Write tag using unified string syntax
+            bool writeSuccess = await client.WriteAsync<int>("DB1.DBD0", 12345);
+            Assert.True(writeSuccess);
+
+            await client.DisconnectAsync();
+            Assert.Equal(PlcConnectionState.Disconnected, client.State);
         }
     }
 }

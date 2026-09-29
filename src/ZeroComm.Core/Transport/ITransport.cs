@@ -31,10 +31,21 @@ namespace ZeroComm.Core.Transport
         Task SendAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Sends a read-only memory buffer asynchronously through the transport.
+        /// Enables zero-copy slicing and stack-allocated buffer transmission.
+        /// </summary>
+        Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Event raised when new stream data is received from the transport.
         /// Arguments: (byte[] buffer, int offset, int count).
         /// </summary>
         event Action<byte[], int, int>? DataReceived;
+
+        /// <summary>
+        /// Event raised when the transport is connected or re-connected.
+        /// </summary>
+        event Action? OnConnected;
 
         /// <summary>
         /// Event raised when an unhandled transport error occurs.

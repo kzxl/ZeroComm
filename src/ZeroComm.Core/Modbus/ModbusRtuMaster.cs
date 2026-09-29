@@ -17,8 +17,7 @@ namespace ZeroComm.Core.Modbus
         private readonly ITransport _transport;
         private readonly CircularRingBuffer _ringBuffer = new CircularRingBuffer(32768);
         private readonly object _ringLock = new object();
-        private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
-        private TaskCompletionSource<byte[]>? _currentResponseTcs;
+        private readonly Channels.HalfDuplexChannel<byte[]> _channel = new Channels.HalfDuplexChannel<byte[]>();
         private byte _expectedUnitId;
         private byte _expectedFunctionCode;
         private bool _isDisposed;
@@ -47,10 +46,10 @@ namespace ZeroComm.Core.Modbus
                         byte fc = frame[1];
 
                         // Match response to active half-duplex request
-                        if (_currentResponseTcs != null && unitId == _expectedUnitId &&
+                        if (unitId == _expectedUnitId &&
                             (fc == _expectedFunctionCode || fc == (_expectedFunctionCode | 0x80)))
                         {
-                            _currentResponseTcs.TrySetResult(frame);
+                            _channel.TrySetResponse(frame);
                             break;
                         }
                     }
@@ -60,59 +59,30 @@ namespace ZeroComm.Core.Modbus
 
         private void OnDisconnected()
         {
-            _currentResponseTcs?.TrySetException(new IOException("Transport disconnected while awaiting Modbus RTU response."));
+            _channel.FaultPending(new IOException("Transport disconnected while awaiting Modbus RTU response."));
         }
 
-        private async Task<byte[]> SendAndReceiveAsync(
+        private Task<byte[]> SendAndReceiveAsync(
             byte unitId,
             byte functionCode,
             byte[] requestBytes,
             CancellationToken cancellationToken)
         {
-            await _gate.WaitAsync(cancellationToken);
-            try
+            if (!_transport.IsConnected)
+                throw new InvalidOperationException("Modbus RTU transport is not connected.");
+
+            lock (_ringLock)
             {
-                if (!_transport.IsConnected)
-                    throw new InvalidOperationException("Modbus RTU transport is not connected.");
-
-                lock (_ringLock)
-                {
-                    _ringBuffer.Clear();
-                }
-
-                _expectedUnitId = unitId;
-                _expectedFunctionCode = functionCode;
-                var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _currentResponseTcs = tcs;
-
-                await _transport.SendAsync(requestBytes, 0, requestBytes.Length, cancellationToken);
-
-                using (var timeoutCts = new CancellationTokenSource(DefaultTimeoutMs))
-                using (var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
-                {
-                    var registration = linked.Token.Register(() =>
-                    {
-                        if (timeoutCts.IsCancellationRequested)
-                            tcs.TrySetException(new TimeoutException($"Modbus RTU request timed out after {DefaultTimeoutMs}ms (Unit: {unitId}, FC: {functionCode})."));
-                        else
-                            tcs.TrySetCanceled();
-                    });
-
-                    try
-                    {
-                        return await tcs.Task;
-                    }
-                    finally
-                    {
-                        registration.Dispose();
-                        _currentResponseTcs = null;
-                    }
-                }
+                _ringBuffer.Clear();
             }
-            finally
-            {
-                _gate.Release();
-            }
+
+            _expectedUnitId = unitId;
+            _expectedFunctionCode = functionCode;
+
+            return _channel.ExecuteRequestAsync(
+                token => _transport.SendAsync(requestBytes, 0, requestBytes.Length, token),
+                DefaultTimeoutMs,
+                cancellationToken);
         }
 
         public async Task<ushort[]> ReadHoldingRegistersAsync(
@@ -202,7 +172,7 @@ namespace ZeroComm.Core.Modbus
                 _isDisposed = true;
                 _transport.DataReceived -= OnDataReceived;
                 _transport.OnDisconnected -= OnDisconnected;
-                _gate.Dispose();
+                _channel.Dispose();
             }
         }
     }

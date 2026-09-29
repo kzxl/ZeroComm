@@ -117,11 +117,27 @@ namespace ZeroComm.Core.Buffers
         /// </summary>
         public int Read(byte[] dst, int offset, int count)
         {
+            if (dst == null) throw new ArgumentNullException(nameof(dst));
+            if (offset < 0 || count < 0 || offset + count > dst.Length)
+                throw new ArgumentOutOfRangeException(nameof(count));
+
             lock (_syncRoot)
             {
-                int bytesRead = Peek(dst, offset, count);
-                Advance(bytesRead);
-                return bytesRead;
+                int bytesToRead = Math.Min(count, _count);
+                if (bytesToRead == 0) return 0;
+
+                int firstChunk = Math.Min(bytesToRead, Capacity - _head);
+                Array.Copy(_buffer, _head, dst, offset, firstChunk);
+
+                int secondChunk = bytesToRead - firstChunk;
+                if (secondChunk > 0)
+                {
+                    Array.Copy(_buffer, 0, dst, offset + firstChunk, secondChunk);
+                }
+
+                _head = (_head + bytesToRead) % Capacity;
+                _count -= bytesToRead;
+                return bytesToRead;
             }
         }
 

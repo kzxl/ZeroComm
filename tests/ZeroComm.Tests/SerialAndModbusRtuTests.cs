@@ -16,13 +16,18 @@ namespace ZeroComm.Tests
             public bool IsConnected => true;
 #pragma warning disable CS0067
             public event Action<byte[], int, int>? DataReceived;
+            public event Action? OnConnected;
             public event Action<Exception>? OnError;
             public event Action? OnDisconnected;
 #pragma warning restore CS0067
 
             public Func<byte[], byte[]>? Responder { get; set; }
 
-            public Task ConnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+            public Task ConnectAsync(CancellationToken cancellationToken = default)
+            {
+                OnConnected?.Invoke();
+                return Task.CompletedTask;
+            }
             public Task DisconnectAsync() { OnDisconnected?.Invoke(); return Task.CompletedTask; }
 
             public Task SendAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken = default)
@@ -43,6 +48,12 @@ namespace ZeroComm.Tests
                 }
 
                 return Task.CompletedTask;
+            }
+
+            public Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                byte[] request = buffer.ToArray();
+                return SendAsync(request, 0, request.Length, cancellationToken);
             }
 
             public void Dispose() { }

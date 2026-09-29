@@ -50,6 +50,11 @@ namespace ZeroComm.Core.Transport
         public int ReconnectIntervalMs { get; set; } = 3000;
 
         /// <summary>
+        /// Event raised when the socket is connected or reconnected.
+        /// </summary>
+        public event Action? OnConnected;
+
+        /// <summary>
         /// Event raised when new stream data is received from the TCP socket.
         /// </summary>
         public event Action<byte[], int, int>? DataReceived;
@@ -63,6 +68,23 @@ namespace ZeroComm.Core.Transport
         /// Event raised when the socket is disconnected.
         /// </summary>
         public event Action? OnDisconnected;
+
+        private IProtocolSession? _attachedSession;
+
+        /// <summary>
+        /// Gets the attached application-layer protocol session, if any.
+        /// </summary>
+        public IProtocolSession? AttachedSession => _attachedSession;
+
+        /// <summary>
+        /// Attaches an application-layer protocol session for automatic handshake recovery on reconnect.
+        /// </summary>
+        public void AttachSession(IProtocolSession session) => _attachedSession = session;
+
+        /// <summary>
+        /// Detaches the currently attached protocol session.
+        /// </summary>
+        public void DetachSession() => _attachedSession = null;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AsyncTcpTransport"/> class.
@@ -121,6 +143,12 @@ namespace ZeroComm.Core.Transport
                 }
 
                 _receiveTask = Task.Run(() => ReceiveLoopAsync(_cts.Token));
+
+                OnConnected?.Invoke();
+                if (_attachedSession != null)
+                {
+                    await _attachedSession.OnSessionConnectedAsync(cancellationToken).ConfigureAwait(false);
+                }
             }
             catch (Exception ex)
             {
@@ -179,6 +207,11 @@ namespace ZeroComm.Core.Transport
                 try { await rxTask.ConfigureAwait(false); } catch { }
             }
 
+            if (_attachedSession != null)
+            {
+                try { await _attachedSession.OnSessionDisconnectedAsync().ConfigureAwait(false); } catch { }
+            }
+
             if (notify)
             {
                 OnDisconnected?.Invoke();
@@ -210,6 +243,47 @@ namespace ZeroComm.Core.Transport
             try
             {
                 await stream.WriteAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _sendLock.Release();
+            }
+        }
+
+        /// <summary>
+        /// Sends a read-only memory buffer asynchronously over the TCP socket.
+        /// </summary>
+        public async Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            ThrowIfDisposed();
+            if (buffer.Length == 0) return;
+
+            NetworkStream? stream;
+            lock (_stateLock)
+            {
+                stream = _stream;
+            }
+
+            if (stream == null || !IsConnected)
+                throw new InvalidOperationException("Transport is not connected.");
+
+            await _sendLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+#if NET8_0_OR_GREATER
+                await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+#else
+                if (System.Runtime.InteropServices.MemoryMarshal.TryGetArray(buffer, out var segment) && segment.Array != null)
+                {
+                    await stream.WriteAsync(segment.Array, segment.Offset, segment.Count, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    byte[] arr = buffer.ToArray();
+                    await stream.WriteAsync(arr, 0, arr.Length, cancellationToken).ConfigureAwait(false);
+                }
+#endif
                 await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
             finally

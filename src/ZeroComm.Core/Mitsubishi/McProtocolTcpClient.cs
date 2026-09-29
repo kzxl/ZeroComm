@@ -17,8 +17,7 @@ namespace ZeroComm.Core.Mitsubishi
         private readonly ITransport _transport;
         private readonly CircularRingBuffer _ringBuffer = new CircularRingBuffer(65536);
         private readonly object _ringLock = new object();
-        private readonly SemaphoreSlim _sendLock = new SemaphoreSlim(1, 1);
-        private TaskCompletionSource<byte[]>? _currentPendingResponse;
+        private readonly Channels.HalfDuplexChannel<byte[]> _channel = new Channels.HalfDuplexChannel<byte[]>();
         private bool _isDisposed;
 
         /// <summary>
@@ -49,62 +48,23 @@ namespace ZeroComm.Core.Mitsubishi
 
                 while (StreamingFrameParser.TryExtractMcProtocolFrame(_ringBuffer, out byte[] frame))
                 {
-                    var tcs = _currentPendingResponse;
-                    if (tcs != null)
-                    {
-                        _currentPendingResponse = null;
-                        tcs.TrySetResult(frame);
-                    }
+                    _channel.TrySetResponse(frame);
                 }
             }
         }
 
         private void OnDisconnected()
         {
-            var tcs = _currentPendingResponse;
-            if (tcs != null)
-            {
-                _currentPendingResponse = null;
-                tcs.TrySetException(new IOException("Transport disconnected while awaiting MELSEC response."));
-            }
+            _channel.FaultPending(new IOException("Transport disconnected while awaiting MELSEC response."));
         }
 
-        private async Task<byte[]> SendAndReceiveAsync(byte[] request, int timeoutMs, CancellationToken ct)
+        private Task<byte[]> SendAndReceiveAsync(byte[] request, int timeoutMs, CancellationToken ct)
         {
             ThrowIfDisposed();
-
-            await _sendLock.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _currentPendingResponse = tcs;
-
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                linkedCts.CancelAfter(timeoutMs);
-
-                await _transport.SendAsync(request, 0, request.Length, ct).ConfigureAwait(false);
-
-#if NET8_0_OR_GREATER
-                return await tcs.Task.WaitAsync(linkedCts.Token).ConfigureAwait(false);
-#else
-                var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(timeoutMs, linkedCts.Token)).ConfigureAwait(false);
-                if (completedTask != tcs.Task)
-                {
-                    _currentPendingResponse = null;
-                    throw new TimeoutException($"MELSEC MC Protocol request timed out after {timeoutMs}ms.");
-                }
-                return await tcs.Task.ConfigureAwait(false);
-#endif
-            }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-            {
-                _currentPendingResponse = null;
-                throw new TimeoutException($"MELSEC MC Protocol request timed out after {timeoutMs}ms.");
-            }
-            finally
-            {
-                _sendLock.Release();
-            }
+            return _channel.ExecuteRequestAsync(
+                token => _transport.SendAsync(request, 0, request.Length, token),
+                timeoutMs,
+                ct);
         }
 
         /// <summary>
@@ -195,8 +155,7 @@ namespace ZeroComm.Core.Mitsubishi
             _isDisposed = true;
             _transport.DataReceived -= OnDataReceived;
             _transport.OnDisconnected -= OnDisconnected;
-            OnDisconnected();
-            _sendLock.Dispose();
+            _channel.Dispose();
         }
     }
 }

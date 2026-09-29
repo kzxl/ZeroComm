@@ -137,8 +137,8 @@ namespace ZeroComm.Core.Buffers
                 return false; // Waiting for remaining frame bytes
 
             var candidate = new byte[expectedLen];
-            // Read candidate without consuming to check CRC
-            for (int i = 0; i < expectedLen; i++) candidate[i] = ring.PeekByte(i);
+            // Read candidate in one batch without consuming to check CRC
+            ring.Peek(candidate, 0, expectedLen);
 
             if (ModbusRtuFrame.ValidateCrc(candidate, 0, expectedLen))
             {
@@ -197,6 +197,46 @@ namespace ZeroComm.Core.Buffers
                 ring.Advance(delimiter.Length);
             }
 
+            return true;
+        }
+
+        /// <summary>
+        /// Attempts to extract a complete Omron FINS TCP frame from the ring buffer.
+        /// Inspects the 16-byte FINS TCP encapsulation header: ASCII 'FINS' and 4-byte big-endian length.
+        /// </summary>
+        public static bool TryExtractFinsTcpFrame(CircularRingBuffer ring, out byte[] frame)
+        {
+            frame = Array.Empty<byte>();
+            if (ring == null || ring.Count < 16)
+                return false;
+
+            // Check ASCII 'FINS' (0x46, 0x49, 0x4E, 0x53)
+            if (ring.PeekByte(0) != 0x46 || ring.PeekByte(1) != 0x49 || ring.PeekByte(2) != 0x4E || ring.PeekByte(3) != 0x53)
+            {
+                // Not aligned with 'FINS' magic header, advance 1 byte to seek synchronization
+                ring.Advance(1);
+                return false;
+            }
+
+            // Length at offset 4..7: represents length of subsequent bytes (Command 4B + Error 4B + payload)
+            uint lengthField = ((uint)ring.PeekByte(4) << 24) |
+                               ((uint)ring.PeekByte(5) << 16) |
+                               ((uint)ring.PeekByte(6) << 8) |
+                               (uint)ring.PeekByte(7);
+
+            if (lengthField < 8 || lengthField > 65535)
+            {
+                // Invalid length field, advance 1 byte
+                ring.Advance(1);
+                return false;
+            }
+
+            int totalExpectedBytes = (int)(8 + lengthField);
+            if (ring.Count < totalExpectedBytes)
+                return false;
+
+            frame = new byte[totalExpectedBytes];
+            ring.Read(frame, 0, totalExpectedBytes);
             return true;
         }
     }

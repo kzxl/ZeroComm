@@ -36,6 +36,7 @@ namespace ZeroComm.Core.Transport
         public bool IsConnected => _isConnected && !_disposed;
 
         public event Action<byte[], int, int>? DataReceived;
+        public event Action? OnConnected;
         public event Action<Exception>? OnError;
         public event Action? OnDisconnected;
 
@@ -67,6 +68,7 @@ namespace ZeroComm.Core.Transport
                     _isConnected = true;
                     _cts = new CancellationTokenSource();
                     _readLoopTask = Task.Run(() => ReadLoopStreamAsync(_customStream, _cts.Token));
+                    OnConnected?.Invoke();
                     return Task.CompletedTask;
                 }
 
@@ -126,6 +128,7 @@ namespace ZeroComm.Core.Transport
                 _isConnected = true;
                 _cts = new CancellationTokenSource();
                 _readLoopTask = Task.Run(() => ReadLoopNativeAsync(_hComm, _cts.Token));
+                OnConnected?.Invoke();
 
                 return Task.CompletedTask;
             }
@@ -198,6 +201,23 @@ namespace ZeroComm.Core.Transport
                     }
                 }
             }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Sends a read-only memory buffer asynchronously through the serial port.
+        /// </summary>
+        public async Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (buffer.Length == 0) return;
+            if (System.Runtime.InteropServices.MemoryMarshal.TryGetArray(buffer, out var segment) && segment.Array != null)
+            {
+                await SendAsync(segment.Array, segment.Offset, segment.Count, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                byte[] arr = buffer.ToArray();
+                await SendAsync(arr, 0, arr.Length, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         private async Task ReadLoopStreamAsync(Stream stream, CancellationToken ct)

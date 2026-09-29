@@ -18,6 +18,7 @@ namespace ZeroComm.Tests
             public bool IsConnected { get; set; } = true;
             public byte[]? LastSentBuffer { get; private set; }
             public event Action<byte[], int, int>? DataReceived;
+            public event Action? OnConnected;
 #pragma warning disable CS0067
             public event Action<Exception>? OnError;
 #pragma warning restore CS0067
@@ -26,6 +27,7 @@ namespace ZeroComm.Tests
             public Task ConnectAsync(CancellationToken cancellationToken = default)
             {
                 IsConnected = true;
+                OnConnected?.Invoke();
                 return Task.CompletedTask;
             }
 
@@ -40,6 +42,12 @@ namespace ZeroComm.Tests
             {
                 LastSentBuffer = new byte[count];
                 Array.Copy(buffer, offset, LastSentBuffer, 0, count);
+                return Task.CompletedTask;
+            }
+
+            public Task SendAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                LastSentBuffer = buffer.ToArray();
                 return Task.CompletedTask;
             }
 
