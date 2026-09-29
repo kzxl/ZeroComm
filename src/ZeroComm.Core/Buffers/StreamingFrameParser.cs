@@ -239,5 +239,30 @@ namespace ZeroComm.Core.Buffers
             ring.Read(frame, 0, totalExpectedBytes);
             return true;
         }
+
+        /// <summary>
+        /// Attempts to extract a complete EtherNet/IP (CIP) encapsulation frame from the ring buffer.
+        /// Inspects the 24-byte header: Command(2B), Length(2B little-endian), SessionHandle(4B), Status(4B), SenderContext(8B), Options(4B).
+        /// </summary>
+        public static bool TryExtractEtherNetIpFrame(CircularRingBuffer ring, out byte[] frame)
+        {
+            frame = Array.Empty<byte>();
+            if (ring == null || ring.Count < 24)
+                return false;
+
+            // Length at offset 2..3 (UINT16 little-endian): length of payload following 24-byte header
+            byte lenLow = ring.PeekByte(2);
+            byte lenHigh = ring.PeekByte(3);
+            ushort payloadLength = (ushort)(lenLow | (lenHigh << 8));
+
+            int totalExpectedBytes = 24 + payloadLength;
+            if (ring.Count < totalExpectedBytes)
+                return false;
+
+            frame = new byte[totalExpectedBytes];
+            ring.Read(frame, 0, totalExpectedBytes);
+            return true;
+        }
     }
 }
+
